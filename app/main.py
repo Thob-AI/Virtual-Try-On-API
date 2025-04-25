@@ -1,50 +1,55 @@
-from fastapi import FastAPI, File, UploadFile, Form, BackgroundTasks, Request
-from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
-import shutil
-import os
-import uuid
 from pathlib import Path
-import subprocess
+import os
+import socket
 
 from app.config import settings
-from app.api.routes import router as api_router
-
-# Create the output directory if it doesn't exist
-os.makedirs(settings.OUTPUT_DIR, exist_ok=True)
-os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-os.makedirs(settings.STATIC_DIR, exist_ok=True)
 
 app = FastAPI(
     title="Virtual Try-On API",
-    description="API for generating clothing images and virtual try-on using SD 2.1 and OOTDiffusion",
+    description="API for generating clothing images and virtual try-on",
     version="1.0.0",
+    servers=[{"url": "http://0.0.0.0:8000", "description": "Local"}]
 )
 
-# Mount static files directory
-app.mount("/static", StaticFiles(directory=settings.STATIC_DIR), name="static")
+# Setup directories
+Path(settings.STATIC_DIR).mkdir(exist_ok=True)
+Path(settings.UPLOAD_DIR).mkdir(exist_ok=True)
+Path(settings.OUTPUT_DIR).mkdir(exist_ok=True)
 
-# Set up templates
+app.mount("/static", StaticFiles(directory=settings.STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=settings.TEMPLATES_DIR)
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
-    allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
-)
+@app.on_event("startup")
+async def startup_events():
+    # Create default favicon
+    favicon_path = Path(settings.STATIC_DIR) / "favicon.ico"
+    if not favicon_path.exists():
+        with open(favicon_path, "wb") as f:
+            f.write(b'\x00\x00\x01\x00\x01\x00\x10\x10\x00\x00\x01\x00\x18\x00h\x03\x00\x00&\x00\x00\x00(\x00\x00\x00\x10\x00\x00\x00 \x00\x00\x00\x01\x00\x18\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
 
-# Include routers
-app.include_router(api_router, prefix="/api")
+    # Handle port conflicts
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind(("0.0.0.0", 8000))
+    except OSError:
+        print("Port 8000 already in use - reusing connection")
+    finally:
+        sock.close()
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def get_favicon():
+    return Response(status_code=204)
+
+# Rest of your routes
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    """Render the main application page"""
     return templates.TemplateResponse("index.html", {"request": request})
+
 
 @app.get("/health")
 async def health_check():

@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings
 from pathlib import Path
 
 class Settings(BaseSettings):
-    BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    BASE_DIR: str = Path(__file__).parent.parent.resolve()
     
     # Project structure
     UPLOAD_DIR: str = os.path.join(BASE_DIR, "uploads")

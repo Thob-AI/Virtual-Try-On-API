@@ -27,7 +27,7 @@ def setup_environments(base_dir):
     run_command(f"virtualenv {base_dir}/envs/sd_env")
     
     # Install PyTorch and SD requirements
-    run_command(f". {base_dir}/envs/sd_env/bin/activate && pip install torch==2.0.1+cu118 torchvision==0.15.2+cu118 --index-url https://download.pytorch.org/whl/cu118 -q")
+    run_command(f". {base_dir}/envs/sd_env/bin/activate && pip install torch==2.6.0+cu124 torchvision==0.21.0+cu124 torchaudio==2.6.0+cu124 --index-url https://download.pytorch.org/whl/cu124 -q")
     run_command(f". {base_dir}/envs/sd_env/bin/activate && pip install -r {base_dir}/requirements_sdxl.txt -q")
     run_command(f". {base_dir}/envs/sd_env/bin/activate && pip install fastapi uvicorn python-multipart -q")
     

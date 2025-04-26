@@ -88,12 +88,18 @@ async def api_virtual_tryon(
                 model_path=str(Path(settings.DEFAULT_MODEL_PATH)),
                 clothing_path=str(source_path),
                 category=category,
+                sample_count=1,
+                scale=2.0
             )
             
             logger.info(f"Virtual try-on completed successfully: {result_path}")
             
+            # Get the filename from the result path
+            result_filename = Path(result_path).name
+            result_id = Path(result_path).parent.name
+            
             return {
-                "result_url": f"/api/images/{request_id}/{Path(result_path).name}"
+                "result_url": f"/api/images/{result_id}/{result_filename}"
             }
         except Exception as e:
             logger.error(f"Virtual try-on process failed: {str(e)}", exc_info=True)

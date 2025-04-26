@@ -1,88 +1,149 @@
 # Virtual Try-On API
 
-A FastAPI application that provides virtual try-on functionality using Stable Diffusion 2.1 (with optional LoRA support) for clothing generation and OOTDiffusion for virtual try-on.
+A FastAPI-based service for generating clothing images and virtual try-on using AI models. This API integrates Stable Diffusion for clothing generation and [OOTDiffusion](https://github.com/levihsu/OOTDiffusion/tree/main) for the virtual try-on functionality.
 
 ## Overview
 
-This API allows you to:
-1. Generate clothing images from text prompts using Stable Diffusion 2.1
-2. Apply LoRA fine-tuning to the clothing generation
-3. Perform virtual try-on with OOTDiffusion
-4. Combine both functionalities to generate clothing from a prompt and try it on a model
+This project provides a web API for:
+1. Generating realistic clothing images based on text prompts
+2. Applying generated clothes to a model image using virtual try-on technology
 
-## Setup
+The system is designed to be deployed both locally and on Google Colab with ngrok tunneling.
 
-### Prerequisites
+## Project Structure
 
-- Python 3.8+
-- CUDA-compatible GPU
-- Git LFS installed
+```
+├── OOTDiffusion/       # OOTDiffusion repository (cloned during setup)
+├── app/
+│   ├── api/
+│   │   ├── __init__.py
+│   │   └── routes.py   # API endpoints
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── clothing_generator.py  # Stable Diffusion generator
+│   │   └── virtual_tryon.py       # OOTDiffusion integration
+│   ├── utils/
+│   │   ├── __init__.py
+│   │   └── image_utils.py         # Image processing utilities
+│   ├── __init__.py
+│   ├── config.py                  # Configuration settings
+│   └── main.py                    # FastAPI app setup
+├── envs/
+│   ├── sd_env/                    # Environment for Stable Diffusion
+│   └── ootd_env/                  # Environment for OOTDiffusion
+├── models/
+│   ├── lora/                      # LoRA models for clothing generation
+│   └── ootd/                      # Virtual try-on models
+├── outputs/                       # Generated images stored here
+├── static/
+│   └── images/
+│       └── default_model.jpg      # Default model image
+├── templates/
+│   └── index.html                 # Frontend interface
+├── uploads/                       # Temporary storage for uploads
+├── LICENSE
+├── README.md
+├── colab_server.py                # Google Colab integration
+├── requirements_ootd.txt          # Requirements for OOTDiffusion
+├── requirements_sdxl.txt          # Requirements for Stable Diffusion
+├── server.log                      # Server logs
+└── setup_models.py                # Setup script
+```
 
-### Installation
+## Prerequisites
+
+- Python 3.8 or higher
+- CUDA-compatible GPU with at least 8GB VRAM
+- Git LFS (for downloading model checkpoints)
+
+## Installation
+
+### Option 1: Local Setup
 
 1. Clone this repository:
+
 ```bash
 git clone https://github.com/yourusername/virtual-tryon-api.git
 cd virtual-tryon-api
 ```
 
-2. Copy the requirements files:
-```bash
-# Copy requirements_sdxl.txt and requirements_ootd.txt to the project root
-```
+2. Run the setup script to create environments and download models:
 
-3. Run the setup script:
 ```bash
 python setup_models.py
 ```
 
 This script will:
 - Create virtual environments for Stable Diffusion and OOTDiffusion
-- Install the required dependencies
-- Clone the OOTDiffusion repository and download necessary checkpoints
-- Fix any potential import issues in the dependencies
+- Clone the OOTDiffusion repository
+- Download required model checkpoints
+- Fix any potential issues with dependencies
 
-4. (Optional) Add LoRA models:
+3. Start the API server:
+
 ```bash
-# Place your LoRA models in the models/lora directory
-cp your-clothing-lora.safetensors models/lora/
-```
-
-### Running the API
-
-Start the FastAPI server:
-```bash
-source envs/sd_env/bin/activate
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-The API will be available at http://localhost:8000. You can access the API documentation at http://localhost:8000/docs.
+4. Access the API at: http://localhost:8000
 
-## API Endpoints
+### Option 2: Google Colab Deployment
 
-### Generate Clothing
+1. Upload the project files to Google Drive
+
+2. Create a new Colab notebook and mount your Google Drive:
+
+```python
+from google.colab import drive
+drive.mount('/content/drive')
+```
+
+3. Navigate to your project directory:
+
+```python
+%cd /content/drive/MyDrive/path/to/virtual-tryon-api
+```
+
+4. Run the setup script:
+
+```python
+!python setup_models.py
+```
+
+5. Add your ngrok authentication token as Colab secret:
+   - Go to ngrok dashboard to get your token
+   - In Colab, add a new secret named "ngrok" with your token value
+   - Optionally add your HuggingFace token as "HF_TOKEN"
+
+6. Run the Colab server script in a notebook cell:
+
+```python
+import colab_server
+colab_server.run_in_colab()
+```
+
+7. Click on the generated URL to access the web interface
+
+## API Usage
+
+### Generate Clothing Image
 
 ```
 POST /api/generate-clothing
 ```
 
-Generates a clothing image based on a text prompt using Stable Diffusion 2.1.
+Form parameters:
+- `prompt`: Text description of the clothing (required)
+- `lora_scale`: LoRA adaptation scale (default: 0.7)
+- `steps`: Number of diffusion steps (default: 30)
+- `guidance`: Guidance scale (default: 7.5)
+- `seed`: Random seed (default: 42)
 
-**Form Parameters:**
-- `prompt` (string, required): Text description of the clothing to generate
-- `lora_path` (string, optional): Path to LoRA weights file
-- `lora_scale` (float, optional, default=0.7): Scale factor for LoRA weights
-- `negative_prompt` (string, optional): Negative prompt to guide generation
-- `steps` (int, optional, default=30): Number of diffusion steps
-- `guidance` (float, optional, default=7.5): Guidance scale
-- `seed` (int, optional, default=42): Random seed
-
-**Response:**
+Response:
 ```json
 {
-  "request_id": "uuid-string",
-  "image_path": "/path/to/clothing.png",
-  "image_url": "/api/images/uuid-string/clothing.png"
+  "request_id": "unique_id",
+  "clothing_url": "/api/images/unique_id/clothing.png"
 }
 ```
 
@@ -92,117 +153,75 @@ Generates a clothing image based on a text prompt using Stable Diffusion 2.1.
 POST /api/virtual-tryon
 ```
 
-Performs virtual try-on with either an uploaded clothing image or by generating one from a prompt.
+Form parameters:
+- `clothing_url`: URL from previous generation (required)
+- `category`: Clothing category (0=upper, 1=lower, 2=dress)
 
-**Form Parameters:**
-- `clothing_image` (file, optional): Clothing image file to try on
-- `model_image` (file, required): Person image to dress
-- `prompt` (string, optional if clothing_image provided): Text description to generate clothing
-- `lora_path` (string, optional): Path to LoRA weights for clothing generation
-- `category` (int, optional, default=0): Garment category (0=upper, 1=lower, 2=dress)
-- `sample_count` (int, optional, default=4): Number of samples to generate
-- `scale` (float, optional, default=2.0): Scale factor for try-on
-
-**Response:**
+Response:
 ```json
 {
-  "request_id": "uuid-string",
-  "result_path": "/path/to/result.png",
-  "result_url": "/api/images/uuid-string/result.png",
-  "model_url": "/api/images/uuid-string/model.png",
-  "clothing_url": "/api/images/uuid-string/clothing.png"
+  "result_url": "/api/images/unique_id/result_out_0.png"
 }
 ```
 
-### Get Generated Image
+### Get Image
 
 ```
 GET /api/images/{request_id}/{filename}
 ```
 
-Retrieves a generated image by its request ID and filename.
-
-**Path Parameters:**
-- `request_id` (string, required): UUID of the request
-- `filename` (string, required): Name of the file (e.g., "clothing.png", "result.png")
-
-**Response:**
-- The image file
+Returns the generated image file.
 
 ## Examples
 
-### Generate Clothing and Try It On
+### Generate a clothing image and try it on
 
 ```python
 import requests
 
-# API endpoint
-api_url = "http://localhost:8000/api"
-
-# Step 1: Upload model image
-with open("person.jpg", "rb") as f:
-    model_file = {"model_image": f}
-    
-    # Additional parameters
-    data = {
-        "prompt": "a simple grey t-shirt, front view, plain, minimal, product photography",
-        "category": 0,  # 0 for upper body clothing
-        "sample_count": 4,
-        "scale": 2.0
+# Generate clothing
+response = requests.post(
+    "http://localhost:8000/api/generate-clothing",
+    data={
+        "prompt": "blue t-shirt with pattern, on plain white background"
     }
-    
-    # Make the request
-    response = requests.post(f"{api_url}/virtual-tryon", files=model_file, data=data)
-    
-    if response.status_code == 200:
-        result = response.json()
-        print(f"Try-on result URL: {result['result_url']}")
-        print(f"Generated clothing URL: {result['clothing_url']}")
-    else:
-        print(f"Error: {response.json()}")
+)
+clothing_data = response.json()
+
+# Apply virtual try-on
+tryon_response = requests.post(
+    "http://localhost:8000/api/virtual-tryon",
+    data={
+        "clothing_url": clothing_data["clothing_url"],
+        "category": 0  # Upper body
+    }
+)
+result_data = tryon_response.json()
+
+print(f"Result available at: {result_data['result_url']}")
 ```
-
-## Deploying with Docker
-
-A Dockerfile is provided to containerize the application. Build and run the Docker container:
-
-```bash
-# Build the Docker image
-docker build -t virtual-tryon-api .
-
-# Run the container
-docker run -p 8000:8000 --gpus all virtual-tryon-api
-```
-
-## Customization
-
-### Adding Custom LoRA Models
-
-To use custom LoRA models for clothing generation:
-
-1. Place your LoRA files in the `models/lora` directory
-2. Reference them in API calls by providing the filename to the `lora_path` parameter
-
-### Configuration
-
-You can customize the application settings by modifying `app/config.py` or by setting environment variables.
 
 ## Troubleshooting
 
-### Common Issues
+- **GPU Memory Issues**: Reduce batch size or resolution if you encounter CUDA out of memory errors
+- **Missing Dependencies**: Make sure all requirements are installed in the correct environments
+- **OOTDiffusion Errors**: Check that all checkpoints are properly downloaded and placed in the correct directories
+- **Port Conflicts**: Use the `kill_process_on_port()` function in `colab_server.py` to free up port 8000
+- **Path Issues**: Review the log files for any path-related errors and adjust the configuration as needed
 
-1. **CUDA Out of Memory**: Reduce the number of samples or use a GPU with more VRAM
-2. **Missing Dependencies**: Ensure all requirements are installed in both environments
-3. **File Not Found Errors**: Check that all paths in the config file are correct
 
-### Logs
+## Citation
 
-Check the application logs for more details on errors:
+This project relies on OOTDiffusion. If you use this project in your research or application, please cite:
 
-```bash
-tail -f logs/app.log
+```
+@inproceedings{hsu2023ootdiffusion,
+  title={OOTDiffusion: Outfitting Fusion based Latent Diffusion for Controllable Virtual Try-on},
+  author={Hsu, Wei-Chiu and Huang, Yihao and Ma, Yanrui and Li, Jiashuo and Liu, Ming-Yu and Lin, Yuting},
+  booktitle={Proceedings of the IEEE/CVF International Conference on Computer Vision},
+  year={2023}
+}
 ```
 
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project uses the implementation from:
+- https://github.com/levihsu/OOTDiffusion/tree/main

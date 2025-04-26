@@ -2,6 +2,7 @@ import os
 import subprocess
 import logging
 from pathlib import Path
+import shutil
 from typing import Optional
 
 from app.config import settings
@@ -28,15 +29,20 @@ def run_virtual_tryon(
     if not os.path.exists(clothing_path):
         raise FileNotFoundError(f"Clothing image not found: {clothing_path}")
 
-    # Set default output directory
-    output_dir = output_dir or os.path.join(settings.OUTPUT_DIR, "virtual_tryon")
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    # Set up absolute paths to prevent directory issues
+    run_dir = os.path.join(settings.OOTD_DIR, "run")
+    ootd_output_dir = os.path.join(run_dir, "images_output")
+    
+    # Ensure output directory exists
+    Path(ootd_output_dir).mkdir(parents=True, exist_ok=True)
+    logger.info(f"Ensuring output directory exists: {ootd_output_dir}")
 
     # Environmental debug information
     current_dir = os.getcwd()
     logger.info(f"Current working directory: {current_dir}")
     logger.info(f"OOTD directory: {settings.OOTD_DIR}")
     logger.info(f"Environment path: {settings.OOTD_ENV_PATH}")
+    logger.info(f"Output directory for OOTD: {ootd_output_dir}")
     
     # Check for critical directories
     checkpoints_dir = os.path.join(settings.OOTD_DIR, "checkpoints")
@@ -51,7 +57,7 @@ def run_virtual_tryon(
         raise FileNotFoundError(f"OOTD model checkpoints not found: {ootd_checkpoints}")
     
     # Check if run script exists
-    run_script = os.path.join(settings.OOTD_DIR, "run", "run_ootd.py")
+    run_script = os.path.join(run_dir, "run_ootd.py")
     if not os.path.exists(run_script):
         logger.error(f"OOTDiffusion run script not found: {run_script}")
         raise FileNotFoundError(f"OOTDiffusion run script not found: {run_script}")
@@ -66,13 +72,15 @@ def run_virtual_tryon(
         except Exception as e:
             logger.warning(f"Could not create symbolic link: {str(e)}")
     
-    # Build the execution command
+    # Build the execution command with explicit creation of output directory
     cmd = [
         f"source {settings.OOTD_ENV_PATH}/bin/activate",
         "&&",
-        "cd", settings.OOTD_DIR,
+        f"mkdir -p {ootd_output_dir}",  # Explicitly create directory
         "&&",
-        "python", "run/run_ootd.py",
+        "cd", run_dir,  # Change to run directory, not just OOTDiffusion
+        "&&",
+        "python", "run_ootd.py",
         f"--model_path \"{model_path}\"",
         f"--cloth_path \"{clothing_path}\"",
         f"--model_type dc",
@@ -97,6 +105,7 @@ def run_virtual_tryon(
         
         if result.returncode != 0:
             logger.error(f"OOTD failed: {result.stderr}")
+            logger.error(f"OOTD output: {result.stdout}")
             raise RuntimeError(f"OOTDiffusion command failed with return code {result.returncode}: {result.stderr}")
         else:
             logger.info(f"OOTD command succeeded")
@@ -107,13 +116,46 @@ def run_virtual_tryon(
         raise RuntimeError(f"Error executing OOTDiffusion: {str(e)}")
 
     # Find and return the result
-    result_files = list(Path(output_dir).glob("*.png"))
-    if not result_files:
-        logger.error(f"No output images found in directory: {output_dir}")
-        raise FileNotFoundError(f"No output images in {output_dir}")
+    # Create a unique request ID directory for this result
+    request_id = Path(clothing_path).parent.name
+    api_output_dir = Path(settings.OUTPUT_DIR) / request_id
+    api_output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Return most recent result
+    # Find the output files - check both with absolute and relative paths
+    result_files = list(Path(ootd_output_dir).glob("out_*.png"))
+    
+    if not result_files:
+        # Try looking in the working directory structure as well
+        alternate_output_dir = os.path.join(current_dir, "OOTDiffusion", "run", "images_output")
+        logger.info(f"No output found in {ootd_output_dir}, checking alternate path: {alternate_output_dir}")
+        result_files = list(Path(alternate_output_dir).glob("out_*.png"))
+    
+    if not result_files:
+        # Try looking directly in the run directory
+        run_output_dir = os.path.join(run_dir, "images_output")
+        logger.info(f"Still no output found, checking directory: {run_output_dir}")
+        result_files = list(Path(run_output_dir).glob("out_*.png"))
+        
+    if not result_files:
+        # Try a complete search in the OOTD directory
+        logger.info(f"Searching entire OOTD directory for output...")
+        for root, _, files in os.walk(settings.OOTD_DIR):
+            for file in files:
+                if file.startswith("out_") and file.endswith(".png"):
+                    result_files.append(Path(os.path.join(root, file)))
+        
+    if not result_files:
+        logger.error(f"No output images found in directory or subdirectories")
+        raise FileNotFoundError(f"No output images found after running OOTDiffusion")
+    
+    # Sort by modification time and get most recent
     result_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
-    result_path = result_files[0]
-    logger.info(f"Virtual try-on result: {result_path}")
-    return str(result_path)
+    source_path = result_files[0]
+    logger.info(f"Found result file: {source_path}")
+    
+    # Copy the file to our API output directory
+    dest_path = api_output_dir / f"result_{source_path.name}"
+    shutil.copy2(source_path, dest_path)
+    
+    logger.info(f"Virtual try-on result copied to: {dest_path}")
+    return str(dest_path)
